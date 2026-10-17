@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root {
+      color-scheme: light;
+      --cream: #fff8ed;
+      --tomato: #e7684f;
+      --sage: #6f9279;
+      --ink: #3c332d;
+      --muted: #806f63;
+      --track: #eadfd2;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-width: 180px; background: transparent; }
+    body {
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    .card {
+      padding: 12px 14px 10px;
+      border: 1px solid rgba(231, 104, 79, .16);
+      border-radius: 18px;
+      background: var(--cream);
+      box-shadow: 0 5px 18px rgba(125, 89, 61, .08);
+    }
+    .readout {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 42px;
+    }
+    .emoji {
+      width: 44px; flex-shrink: 0;
+      font-size: 40px;
+      line-height: 1;
+      text-align: center;
+      transform: scale(1);
+      transform-origin: center;
+      transition: transform 150ms cubic-bezier(.16, 1, .3, 1);
+    }
+    .copy { min-width: 0; flex: 1; }
+    .label { max-width: 210px; font-size: 14px; font-weight: 700; line-height: 1.35; letter-spacing: .02em; overflow-wrap: anywhere; }
+    .hint { margin-top: 2px; color: var(--muted); font-size: 12px; }
+    .score { color: var(--tomato); font-size: 20px; font-weight: 800; white-space: nowrap; }
+    .range-wrap { position: relative; padding: 14px 2px 4px; }
+    input[type="range"] {
+      --fill: 44%;
+      display: block;
+      width: 100%;
+      height: 28px;
+      margin: 0;
+      cursor: pointer;
+      appearance: none;
+      background: transparent;
+    }
+    input[type="range"]::-webkit-slider-runnable-track {
+      height: 8px;
+      border-radius: 99px;
+      background: linear-gradient(to right, var(--tomato) 0 var(--fill), var(--track) var(--fill) 100%);
+    }
+    input[type="range"]::-moz-range-track {
+      height: 8px;
+      border-radius: 99px;
+      background: var(--track);
+    }
+    input[type="range"]::-moz-range-progress { height: 8px; border-radius: 99px; background: var(--tomato); }
+    input[type="range"]::-webkit-slider-thumb {
+      width: 22px;
+      height: 22px;
+      margin-top: -7px;
+      border: 3px solid var(--cream);
+      border-radius: 50%;
+      background: var(--tomato);
+      box-shadow: 0 2px 7px rgba(116, 61, 46, .25);
+      appearance: none;
+    }
+    input[type="range"]::-moz-range-thumb {
+      width: 16px;
+      height: 16px;
+      border: 3px solid var(--cream);
+      border-radius: 50%;
+      background: var(--tomato);
+      box-shadow: 0 2px 7px rgba(116, 61, 46, .25);
+    }
+    input[type="range"]:focus-visible { outline: 3px solid rgba(111, 146, 121, .45); outline-offset: 4px; border-radius: 99px; }
+    .ends { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; }
+    @media (max-width: 360px) {
+      .card { padding: 10px 11px 8px; border-radius: 15px; }
+      .emoji { width: 42px; font-size: 38px; }
+      .label { font-size: 13px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .emoji { transition: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="card" aria-label="饥饿程度">
+    <div class="readout">
+      <div id="emoji" class="emoji" aria-hidden="true">🙂</div>
+      <div class="copy">
+        <div id="label" class="label">刚刚好</div>
+        <div class="hint">左右拖动，或用键盘方向键调整</div>
+      </div>
+      <div id="score" class="score" aria-live="polite">5/10</div>
+    </div>
+    <div class="range-wrap">
+      <input id="range" type="range" min="1" max="10" step="1" value="5" aria-label="饥饿程度1到10分">
+    </div>
+    <div class="ends"><span>不太饿</span><span>非常饿</span></div>
+  </main>
+  <script>
+    // Keep the bridge local: the iframe may be cross-origin and must not read
+    // objects from the parent window.  These are Streamlit's v1 messages.
+    const Streamlit = {
+      setComponentReady: () => window.parent.postMessage({
+        isStreamlitMessage: true, type: "streamlit:componentReady", apiVersion: 1
+      }, "*"),
+      setFrameHeight: (height) => window.parent.postMessage({
+        isStreamlitMessage: true, type: "streamlit:setFrameHeight", height
+      }, "*"),
+      setComponentValue: (value) => window.parent.postMessage({
+        isStreamlitMessage: true, type: "streamlit:setComponentValue", value, dataType: "json"
+      }, "*"),
+      onRender: (handler) => window.addEventListener("message", (event) => {
+        if (event.source === window.parent && event.data && event.data.type === "streamlit:render") {
+          handler(event.data);
+        }
+      })
+    };
+    const range = document.getElementById("range");
+    const emoji = document.getElementById("emoji");
+    const label = document.getElementById("label");
+    const score = document.getElementById("score");
+    const card = document.querySelector(".card");
+    let dragging = false;
+    let lastCommitted = null;
+
+    const states = [
+      ["😌", "不太饿"], ["🙂", "有一点饿"], ["😊", "开始饿了"], ["😋", "有食欲了"],
+      ["😋", "刚刚好"], ["🤤", "饿了"], ["😟", "比较饿"], ["😩", "很饿"],
+      ["😫", "饿得发慌"], ["😫", "饿得脸都瘪了，快开饭吧"]
+    ];
+    const clamp = (value) => Math.max(1, Math.min(10, Number.parseInt(value, 10) || 5));
+    const paint = (value, remember = false) => {
+      const safe = clamp(value);
+      const state = states[safe - 1];
+      range.value = String(safe);
+      range.style.setProperty("--fill", `${((safe - 1) / 9) * 100}%`);
+      emoji.textContent = state[0];
+      label.textContent = state[1];
+      score.textContent = `${safe}/10`;
+      const squash = safe >= 8 ? 0.92 - ((safe - 8) * 0.045) : 1;
+      const height = safe >= 8 ? 0.98 - ((safe - 8) * 0.02) : 1;
+      emoji.style.transform = `scaleX(${squash}) scaleY(${height})`;
+      if (remember) lastCommitted = safe;
+      return safe;
+    };
+    const commit = () => {
+      dragging = false;
+      if (range.disabled) return;
+      const safe = clamp(range.value);
+      if (safe === lastCommitted) return;
+      lastCommitted = safe;
+      Streamlit.setComponentValue(safe);
+    };
+    const endInteraction = () => { if (dragging) commit(); };
+    const reportHeight = () => {
+      const height = Math.max(180, Math.ceil(card.getBoundingClientRect().height || document.body.scrollHeight || 0));
+      Streamlit.setFrameHeight(height);
+    };
+    range.addEventListener("pointerdown", () => { dragging = true; });
+    range.addEventListener("pointerup", endInteraction);
+    range.addEventListener("pointercancel", endInteraction);
+    range.addEventListener("blur", endInteraction);
+    range.addEventListener("keydown", (event) => {
+      if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) dragging = true;
+    });
+    range.addEventListener("keyup", (event) => {
+      if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) endInteraction();
+    });
+    range.addEventListener("input", () => { paint(range.value); });
+    range.addEventListener("change", commit);
+    Streamlit.onRender((event) => {
+      range.disabled = Boolean(event.disabled);
+      if (range.disabled) dragging = false;
+      if (!dragging && event.args) paint(event.args.value, true);
+      requestAnimationFrame(reportHeight);
+    });
+    if (window.ResizeObserver) new ResizeObserver(reportHeight).observe(card);
+    window.addEventListener("resize", reportHeight, { passive: true });
+    window.addEventListener("blur", endInteraction);
+    Streamlit.setComponentReady();
+    paint(range.value, true);
+    requestAnimationFrame(reportHeight);
+  </script>
+</body>
+</html>

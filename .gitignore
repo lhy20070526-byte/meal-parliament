@@ -1,0 +1,22 @@
+.env
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+outputs/
+.DS_Store
+
+.playwright-cli/
+
+# 本机凭据、运行证据与账号交接不进入远程仓库
+.env.*
+!.env.example
+output/
+HANDOFF.md
+PROJECT_SUMMARY.md
+REVIEW.md
+FINAL_REVIEW.md
+VALIDATION.md
+模型协作/
+*.pem
+*.key
